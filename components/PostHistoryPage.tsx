@@ -1,69 +1,56 @@
 
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { PostCampaign, PostStatus, LogEntry } from '../types';
 import { ChevronRight, FileText, CheckCircle2, AlertOctagon, Clock, X, Terminal, Image as ImageIcon } from 'lucide-react';
 
-const MOCK_POSTS: PostCampaign[] = [
-  {
-    id: 'p_101',
-    image_url: 'https://picsum.photos/400/400',
-    base_caption: 'Summer Sale starts now! ☀️ Get {50%|half} off all items.',
-    status: PostStatus.COMPLETED,
-    total_accounts: 842,
-    success_count: 830,
-    failure_count: 12,
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString()
-  },
-  {
-    id: 'p_102',
-    image_url: 'https://picsum.photos/401/401',
-    base_caption: 'New menu items arriving {tomorrow|next week}! 🍔',
-    status: PostStatus.IN_PROGRESS,
-    total_accounts: 842,
-    success_count: 320,
-    failure_count: 0,
-    created_at: new Date().toISOString()
-  }
-];
-
-const generateMockLogs = (post: PostCampaign): LogEntry[] => {
-    const logs: LogEntry[] = [];
-    const count = 20;
-    
-    const errors = [
-        "API Error: (#190) Error validating access token: Session has expired on Wednesday, 21-Oct-25 10:00:00 PDT.",
-        "API Error: (#200) Permissions error: Pages Public Content Access required.",
-        "API Error: (#32) Page request limit reached. Please wait before retrying.",
-        "Network Error: Connection timed out after 3000ms. Retrying...",
-        "API Error: (#10) Application does not have permission for this action."
-    ];
-
-    for (let i = 0; i < count; i++) {
-        const isSuccess = i < 18;
-        logs.push({
-            id: `log_${post.id}_${i}`,
-            post_id: post.id,
-            account_name: `Franchise Location ${i + 100}`,
-            status: isSuccess ? 'success' : 'failed',
-            message: isSuccess 
-                ? 'IG_MEDIA_ID: 178414059834..., FB_POST_ID: 1029384756...' 
-                : errors[i % errors.length], 
-            timestamp: new Date(Date.now() - (i * 60000)).toISOString()
-        });
-    }
-    return logs;
-};
-
 export const PostHistoryPage: React.FC = () => {
+  const [posts, setPosts] = useState<PostCampaign[]>([]);
   const [selectedPost, setSelectedPost] = useState<PostCampaign | null>(null);
   const [modalView, setModalView] = useState<'details' | 'logs'>('details');
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
-  const handleOpen = (post: PostCampaign, view: 'details' | 'logs') => {
+  useEffect(() => {
+    fetch('/api/posts')
+        .then(res => res.json())
+        .then(data => setPosts(data))
+        .catch(console.error);
+  }, []);
+
+  const handleOpen = async (post: PostCampaign, view: 'details' | 'logs') => {
       setSelectedPost(post);
       setModalView(view);
+      
+      if (view === 'logs') {
+          setIsLoadingLogs(true);
+          try {
+              const res = await fetch(`/api/logs?postId=${post.id}`);
+              const data = await res.json();
+              setLogs(data);
+          } catch (e) {
+              console.error("Failed to fetch logs", e);
+          } finally {
+              setIsLoadingLogs(false);
+          }
+      }
   };
 
-  const logs = selectedPost ? generateMockLogs(selectedPost) : [];
+  const handleTabChange = async (view: 'details' | 'logs') => {
+      setModalView(view);
+      if (view === 'logs' && selectedPost) {
+           setIsLoadingLogs(true);
+          try {
+              const res = await fetch(`/api/logs?postId=${selectedPost.id}`);
+              const data = await res.json();
+              setLogs(data);
+          } catch (e) {
+              console.error("Failed to fetch logs", e);
+          } finally {
+              setIsLoadingLogs(false);
+          }
+      }
+  };
 
   return (
     <div className="space-y-6 relative">
@@ -72,81 +59,87 @@ export const PostHistoryPage: React.FC = () => {
         <p className="text-slate-500">Monitor active broadcasts and view logs.</p>
       </header>
 
-      <div className="grid gap-6">
-        {MOCK_POSTS.map(post => (
-          <div key={post.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6 flex flex-col md:flex-row gap-6">
-            
-            {/* Thumbnail */}
-            <div className="w-full md:w-32 h-48 md:h-32 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">
-              <img src={post.image_url} alt="Campaign" className="w-full h-full object-cover" />
-            </div>
-
-            {/* Info */}
-            <div className="flex-1 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
-                <div>
-                   <h3 className="font-semibold text-slate-900 line-clamp-1">{post.base_caption}</h3>
-                   <span className="text-xs text-slate-500 font-mono">ID: {post.id}</span>
-                </div>
-                <div className="self-start">
-                   <StatusBadge status={post.status} />
-                </div>
-              </div>
-
-              {/* Progress Bar */}
-              <div className="space-y-2">
-                 <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Progress</span>
-                    <span className="font-medium text-slate-900">
-                      {Math.round(((post.success_count + post.failure_count) / post.total_accounts) * 100)}%
-                    </span>
-                 </div>
-                 <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-blue-500 transition-all duration-500"
-                      style={{ width: `${((post.success_count + post.failure_count) / post.total_accounts) * 100}%` }}
-                    ></div>
-                 </div>
-              </div>
-
-              {/* Stats */}
-              <div className="flex flex-wrap gap-4 md:gap-6 text-sm">
-                <div className="flex items-center gap-1.5 text-emerald-600">
-                  <CheckCircle2 size={16} />
-                  <span className="font-semibold">{post.success_count}</span> Posted
-                </div>
-                {post.failure_count > 0 && (
-                  <div className="flex items-center gap-1.5 text-rose-600">
-                    <AlertOctagon size={16} />
-                    <span className="font-semibold">{post.failure_count}</span> Failed
-                  </div>
-                )}
-                <div className="flex items-center gap-1.5 text-slate-400 ml-auto">
-                  <Clock size={16} />
-                  <span>{new Date(post.created_at).toLocaleDateString()}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex md:flex-col justify-center border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 gap-2">
-               <button 
-                 onClick={() => handleOpen(post, 'logs')}
-                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium rounded-lg text-sm transition-colors"
-               >
-                 <FileText size={16} /> Logs
-               </button>
-               <button 
-                 onClick={() => handleOpen(post, 'details')}
-                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-lg text-sm transition-colors"
-               >
-                 Details <ChevronRight size={16} />
-               </button>
-            </div>
-
+      {posts.length === 0 ? (
+          <div className="bg-white p-12 text-center rounded-xl border border-slate-200 text-slate-500">
+              No campaigns found. Create your first post to see history.
           </div>
-        ))}
-      </div>
+      ) : (
+          <div className="grid gap-6">
+            {posts.map(post => (
+              <div key={post.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6 flex flex-col md:flex-row gap-6">
+                
+                {/* Thumbnail */}
+                <div className="w-full md:w-32 h-48 md:h-32 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">
+                  <img src={post.image_url} alt="Campaign" className="w-full h-full object-cover" />
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                    <div>
+                      <h3 className="font-semibold text-slate-900 line-clamp-1">{post.base_caption}</h3>
+                      <span className="text-xs text-slate-500 font-mono">ID: {post.id}</span>
+                    </div>
+                    <div className="self-start">
+                      <StatusBadge status={post.status} />
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                        <span className="text-slate-600">Progress</span>
+                        <span className="font-medium text-slate-900">
+                          {post.total_accounts > 0 ? Math.round(((post.success_count + post.failure_count) / post.total_accounts) * 100) : 0}%
+                        </span>
+                    </div>
+                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-500 transition-all duration-500"
+                          style={{ width: `${post.total_accounts > 0 ? ((post.success_count + post.failure_count) / post.total_accounts) * 100 : 0}%` }}
+                        ></div>
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="flex flex-wrap gap-4 md:gap-6 text-sm">
+                    <div className="flex items-center gap-1.5 text-emerald-600">
+                      <CheckCircle2 size={16} />
+                      <span className="font-semibold">{post.success_count}</span> Posted
+                    </div>
+                    {post.failure_count > 0 && (
+                      <div className="flex items-center gap-1.5 text-rose-600">
+                        <AlertOctagon size={16} />
+                        <span className="font-semibold">{post.failure_count}</span> Failed
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 text-slate-400 ml-auto">
+                      <Clock size={16} />
+                      <span>{new Date(post.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex md:flex-col justify-center border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 gap-2">
+                  <button 
+                    onClick={() => handleOpen(post, 'logs')}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium rounded-lg text-sm transition-colors"
+                  >
+                    <FileText size={16} /> Logs
+                  </button>
+                  <button 
+                    onClick={() => handleOpen(post, 'details')}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium rounded-lg text-sm transition-colors"
+                  >
+                    Details <ChevronRight size={16} />
+                  </button>
+                </div>
+
+              </div>
+            ))}
+          </div>
+      )}
 
       {/* Details/Logs Modal */}
       {selectedPost && (
@@ -157,13 +150,13 @@ export const PostHistoryPage: React.FC = () => {
               <div className="px-4 py-3 md:px-6 md:py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-shrink-0">
                   <div className="flex gap-2 md:gap-4">
                       <button 
-                        onClick={() => setModalView('details')}
+                        onClick={() => handleTabChange('details')}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${modalView === 'details' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                         Details
                       </button>
                       <button 
-                        onClick={() => setModalView('logs')}
+                        onClick={() => handleTabChange('logs')}
                         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${modalView === 'logs' ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                         Logs
@@ -189,7 +182,7 @@ export const PostHistoryPage: React.FC = () => {
                                     <div className="flex justify-between"><span className="text-slate-500">ID</span> <span className="font-mono text-xs">{selectedPost.id}</span></div>
                                     <div className="flex justify-between"><span className="text-slate-500">Created</span> <span>{new Date(selectedPost.created_at).toLocaleString()}</span></div>
                                     <div className="flex justify-between"><span className="text-slate-500">Total Accounts</span> <span>{selectedPost.total_accounts}</span></div>
-                                    <div className="flex justify-between"><span className="text-slate-500">Success Rate</span> <span className="text-emerald-600 font-bold">{Math.round((selectedPost.success_count / selectedPost.total_accounts) * 100)}%</span></div>
+                                    <div className="flex justify-between"><span className="text-slate-500">Success Rate</span> <span className="text-emerald-600 font-bold">{selectedPost.total_accounts > 0 ? Math.round((selectedPost.success_count / selectedPost.total_accounts) * 100) : 0}%</span></div>
                                 </div>
                             </div>
                             <div>
@@ -217,19 +210,25 @@ export const PostHistoryPage: React.FC = () => {
                                      </tr>
                                  </thead>
                                  <tbody className="divide-y divide-slate-100">
-                                     {logs.map(log => (
-                                         <tr key={log.id} className="hover:bg-slate-50">
-                                             <td className="px-4 py-3 text-slate-500 font-mono text-xs">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                                             <td className="px-4 py-3 text-slate-900">{log.account_name}</td>
-                                             <td className="px-4 py-3">
-                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${log.status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                                                     {log.status === 'success' ? <CheckCircle2 size={12}/> : <AlertOctagon size={12}/>}
-                                                     {log.status}
-                                                 </span>
-                                             </td>
-                                             <td className="px-4 py-3 text-slate-600 font-mono text-xs truncate max-w-xs" title={log.message}>{log.message}</td>
-                                         </tr>
-                                     ))}
+                                     {isLoadingLogs ? (
+                                         <tr><td colSpan={4} className="p-4 text-center text-slate-500">Loading logs...</td></tr>
+                                     ) : logs.length === 0 ? (
+                                         <tr><td colSpan={4} className="p-4 text-center text-slate-500">No logs available for this campaign yet.</td></tr>
+                                     ) : (
+                                        logs.map(log => (
+                                            <tr key={log.id} className="hover:bg-slate-50">
+                                                <td className="px-4 py-3 text-slate-500 font-mono text-xs">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                                                <td className="px-4 py-3 text-slate-900">{log.account_name}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${log.status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                                                        {log.status === 'success' ? <CheckCircle2 size={12}/> : <AlertOctagon size={12}/>}
+                                                        {log.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-600 font-mono text-xs truncate max-w-xs" title={log.message}>{log.message}</td>
+                                            </tr>
+                                        ))
+                                     )}
                                  </tbody>
                              </table>
                          </div>

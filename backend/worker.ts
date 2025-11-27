@@ -299,13 +299,96 @@ export default {
         return new Response(JSON.stringify(results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // 4. CREATE POST
+      // 4. GET DASHBOARD STATS (Real Data)
+      if (path === '/api/dashboard-stats' && method === 'GET') {
+          // Aggregate counts
+          const totalAccounts = await env.DB.prepare('SELECT count(*) as count FROM accounts').first('count');
+          const activeAccounts = await env.DB.prepare("SELECT count(*) as count FROM accounts WHERE status = 'active'").first('count');
+          const failedTokens = await env.DB.prepare("SELECT count(*) as count FROM accounts WHERE status = 'error'").first('count');
+          
+          // Get recent posts count (last 7 days)
+          const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+          const postsCount = await env.DB.prepare("SELECT count(*) as count FROM posts WHERE created_at > ?").bind(oneWeekAgo).first('count');
+          
+          return new Response(JSON.stringify({
+              totalAccounts,
+              activeAccounts,
+              failedTokens,
+              postsCount,
+              chartData: [] // TODO: Implement day-by-day aggregation query if D1 allows
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 5. GET POSTS (History)
+      if (path === '/api/posts' && method === 'GET') {
+          const { results } = await env.DB.prepare('SELECT * FROM posts ORDER BY created_at DESC').all();
+          return new Response(JSON.stringify(results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 6. GET LOGS
+      if (path === '/api/logs' && method === 'GET') {
+          const postId = url.searchParams.get('postId');
+          if (!postId) return new Response('Missing postId', { status: 400 });
+          
+          // Join with accounts to get names
+          const { results } = await env.DB.prepare(`
+              SELECT l.*, a.fb_page_name as account_name 
+              FROM logs l 
+              LEFT JOIN accounts a ON l.account_id = a.id 
+              WHERE l.post_id = ? 
+              ORDER BY l.timestamp DESC
+          `).bind(postId).all();
+          
+          return new Response(JSON.stringify(results), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // 7. UPLOAD IMAGE (R2)
+      if (path === '/api/upload' && method === 'POST') {
+          try {
+              const formData = await request.formData();
+              const file = formData.get('file');
+              
+              if (!file || !(file instanceof File)) {
+                  return new Response('No valid file uploaded', { status: 400 });
+              }
+
+              const key = `uploads/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '')}`;
+              
+              await env.BUCKET.put(key, file.stream(), {
+                  httpMetadata: { contentType: file.type }
+              });
+
+              // Construct Public URL (Assuming Worker serves it at /images/)
+              const publicUrl = `${url.origin}/images/${key}`; 
+              
+              return new Response(JSON.stringify({ url: publicUrl }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          } catch (e: any) {
+              console.error("Upload failed", e);
+              return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+          }
+      }
+
+      // 8. SERVE IMAGES (R2 Proxy)
+      if (path.startsWith('/images/') && method === 'GET') {
+          const key = path.replace('/images/', '');
+          const object = await env.BUCKET.get(key);
+          
+          if (!object) return new Response('Not Found', { status: 404 });
+          
+          const headers = new Headers();
+          object.writeHttpMetadata(headers);
+          headers.set('etag', object.httpEtag);
+          
+          return new Response(object.body, { headers });
+      }
+
+      // 9. CREATE POST
       if (path === '/api/posts' && method === 'POST') {
         const body = await request.json() as any;
         const postId = crypto.randomUUID();
         
-        await env.DB.prepare('INSERT INTO posts (id, public_image_url, base_caption, status, created_at) VALUES (?, ?, ?, ?, ?)')
-          .bind(postId, body.imageUrl, body.caption, 'pending', Date.now())
+        await env.DB.prepare('INSERT INTO posts (id, public_image_url, base_caption, status, created_at, success_count, failure_count, total_accounts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(postId, body.imageUrl, body.caption, 'pending', Date.now(), 0, 0, 0)
           .run();
 
         // Trigger Queue

@@ -1,25 +1,34 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Facebook, Search, RefreshCw, AlertTriangle, CheckCircle, X, Trash2, ExternalLink, Link as LinkIcon } from 'lucide-react';
 import { SocialAccount, AccountStatus } from '../types';
 
-// Mock Data
-const MOCK_ACCOUNTS: SocialAccount[] = Array.from({ length: 12 }).map((_, i) => ({
-  id: `acc_${i}`,
-  owner_name: `Franchise Owner ${i + 1}`,
-  fb_page_name: `Coffee Shop - Location ${i + 1}`,
-  ig_username: `coffeeshop_loc${i + 1}`,
-  status: i === 3 ? AccountStatus.DISCONNECTED : i === 7 ? AccountStatus.ERROR : AccountStatus.ACTIVE,
-  last_updated: new Date().toISOString()
-}));
-
 export const AccountsPage: React.FC = () => {
-  const [accounts] = useState<SocialAccount[]>(MOCK_ACCOUNTS);
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showNotification, setShowNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<SocialAccount | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchAccounts = async () => {
+      setIsLoading(true);
+      try {
+          const res = await fetch('/api/accounts');
+          if (res.ok) {
+              const data = await res.json();
+              setAccounts(data);
+          }
+      } catch (e) {
+          console.error("Failed to load accounts", e);
+      } finally {
+          setIsLoading(false);
+      }
+  };
 
   useEffect(() => {
+    fetchAccounts();
+
     // Check for success/error params from OAuth callback
     const hashParts = window.location.hash.split('?');
     
@@ -32,6 +41,7 @@ export const AccountsPage: React.FC = () => {
           type: 'success',
           message: `Successfully connected ${count} accounts from Facebook!`
         });
+        fetchAccounts(); // Refresh list after connection
       } else if (params.get('error')) {
         const errorCode = params.get('error');
         const errorDesc = params.get('error_description');
@@ -80,6 +90,8 @@ export const AccountsPage: React.FC = () => {
 
   const handleDisconnect = (account: SocialAccount) => {
     if (confirm(`Are you sure you want to disconnect ${account.fb_page_name}? This will stop all future broadcasts to this account.`)) {
+        // In a real app, send DELETE request to API
+        // For now, assume success
         setShowNotification({ type: 'success', message: `Disconnected ${account.fb_page_name}` });
         setSelectedAccount(null);
     }
@@ -144,8 +156,12 @@ export const AccountsPage: React.FC = () => {
               className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
           </div>
-          <button className="text-slate-500 hover:text-blue-600 transition-colors self-end sm:self-auto">
-            <RefreshCw size={18} />
+          <button 
+            onClick={fetchAccounts}
+            className="text-slate-500 hover:text-blue-600 transition-colors self-end sm:self-auto"
+            title="Refresh List"
+          >
+            <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
           </button>
         </div>
 
@@ -162,42 +178,50 @@ export const AccountsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredAccounts.map((account) => (
-                <tr key={account.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 font-medium text-slate-900">{account.owner_name}</td>
-                  <td className="px-6 py-4 text-slate-600">{account.fb_page_name}</td>
-                  <td className="px-6 py-4 text-slate-600">@{account.ig_username}</td>
-                  <td className="px-6 py-4">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
-                      account.status === AccountStatus.ACTIVE 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : account.status === AccountStatus.DISCONNECTED
-                        ? 'bg-slate-100 text-slate-700 border-slate-200'
-                        : 'bg-rose-50 text-rose-700 border-rose-200'
-                    }`}>
-                      {account.status === AccountStatus.ACTIVE && <CheckCircle size={12} />}
-                      {account.status === AccountStatus.DISCONNECTED && <AlertTriangle size={12} />}
-                      {account.status === AccountStatus.ERROR && <AlertTriangle size={12} />}
-                      {account.status.charAt(0).toUpperCase() + account.status.slice(1)}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <button 
-                        onClick={() => setSelectedAccount(account)}
-                        className="text-blue-600 hover:text-blue-800 font-medium text-xs hover:underline"
-                    >
-                        Manage
-                    </button>
-                  </td>
+              {filteredAccounts.length > 0 ? (
+                filteredAccounts.map((account) => (
+                    <tr key={account.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 font-medium text-slate-900">{account.owner_name}</td>
+                    <td className="px-6 py-4 text-slate-600">{account.fb_page_name}</td>
+                    <td className="px-6 py-4 text-slate-600">@{account.ig_username}</td>
+                    <td className="px-6 py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                        account.status === AccountStatus.ACTIVE 
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : account.status === AccountStatus.DISCONNECTED
+                            ? 'bg-slate-100 text-slate-700 border-slate-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                        {account.status === AccountStatus.ACTIVE && <CheckCircle size={12} />}
+                        {account.status === AccountStatus.DISCONNECTED && <AlertTriangle size={12} />}
+                        {account.status === AccountStatus.ERROR && <AlertTriangle size={12} />}
+                        {account.status.charAt(0).toUpperCase() + account.status.slice(1)}
+                        </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                        <button 
+                            onClick={() => setSelectedAccount(account)}
+                            className="text-blue-600 hover:text-blue-800 font-medium text-xs hover:underline"
+                        >
+                            Manage
+                        </button>
+                    </td>
+                    </tr>
+                ))
+              ) : (
+                <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
+                        {isLoading ? 'Loading accounts...' : 'No accounts connected yet.'}
+                    </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
         
         <div className="p-4 border-t border-slate-200 text-xs text-slate-500 flex flex-col sm:flex-row justify-between gap-2">
           <span>Showing {filteredAccounts.length} of {accounts.length} accounts</span>
-          <span>Synced just now</span>
+          <span>Last synced: {new Date().toLocaleTimeString()}</span>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, UserPlus, Upload, Trash2, X, CheckCircle, AlertTriangle } from 'lucide-react';
 
@@ -20,9 +21,6 @@ export const AccessControlPage: React.FC = () => {
         if (res.ok) {
             const data = await res.json();
             setAllowedUsers(data);
-        } else {
-            // Fallback for demo if API not available/mock
-            setAllowedUsers([{ id: '1', username: 'demo-page-1', created_at: Date.now() }]);
         }
     } catch (e) {
         console.error("Failed to fetch allowed users", e);

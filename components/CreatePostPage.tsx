@@ -1,3 +1,5 @@
+
+
 import React, { useState, useRef } from 'react';
 import { Upload, Wand2, Send, Image as ImageIcon, X } from 'lucide-react';
 import { generateCreativeCaptions } from '../services/geminiService';
@@ -34,19 +36,40 @@ export const CreatePostPage: React.FC = () => {
     
     setIsSubmitting(true);
     
-    // Simulation of Backend POST
-    console.log("Submitting to Worker...");
-    console.log("Image:", imageFile.name);
-    console.log("Caption:", caption);
-    
-    // Simulate network delay
-    setTimeout(() => {
-      setIsSubmitting(false);
-      alert("Campaign created! The backend worker is now processing batches.");
-      setCaption('');
-      setImageFile(null);
-      setImagePreview(null);
-    }, 1500);
+    try {
+        // 1. Upload Image
+        const formData = new FormData();
+        formData.append('file', imageFile);
+        
+        const uploadRes = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!uploadRes.ok) throw new Error("Image upload failed");
+        
+        const { url: imageUrl } = await uploadRes.json();
+        
+        // 2. Create Post
+        const postRes = await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ caption, imageUrl })
+        });
+
+        if (!postRes.ok) throw new Error("Failed to create campaign");
+
+        alert("Campaign created successfully!");
+        setCaption('');
+        setImageFile(null);
+        setImagePreview(null);
+        
+    } catch (e: any) {
+        console.error("Submission failed", e);
+        alert(`Error: ${e.message || 'Something went wrong'}`);
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   return (
